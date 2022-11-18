@@ -1,0 +1,9 @@
+parameters:
+  reportUnmatchedIgnoredErrors: false
+  treatPhpDocTypesAsCertain: false
+  level: 4
+  paths:
+    - ./src/
+  ignoreErrors:
+    - '#OS_TYPE_(LINUX|WINDOWS) not found#'
+    - '#class Fiber#'
