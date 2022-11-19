@@ -25,13 +25,8 @@ trait MessageTrait
 
     public function withProtocolVersion($version): self
     {
-        if ($this->protocol === $version) {
-            return $this;
-        }
-
         $new = clone $this;
         $new->protocol = $version;
-
         return $new;
     }
 
