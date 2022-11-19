@@ -24,9 +24,10 @@ use ZM\Logger\TablePrinter;
 
 class Server
 {
+    /** 可监听端口的容器类对象，均 use 了此 trait */
     use SocketListenTrait;
 
-    /** @var string 启动显示的 MOTD */
+    /** @var string 启动显示的 MOTD，可修改为自己 App 的名称，可使用 Choir 版本变量 {version} */
     public static string $motd = <<<'EOF'
       ____ _           _
      / ___| |__   ___ (_)_ __
@@ -36,7 +37,7 @@ class Server
 
 EOF;
 
-    /** @var array|string[] 支持的协议 */
+    /** @var array|string[] 支持的协议，默认支持以下协议，可修改该变量插入或去掉支持的协议解析 */
     public static array $supported_protocol = [
         'ws' => WebSocketProtocol::class,
         'tcp' => RawTcpProtocol::class,
