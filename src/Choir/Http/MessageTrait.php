@@ -63,9 +63,6 @@ trait MessageTrait
         $normalized = \strtr($header, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
 
         $new = clone $this;
-        if (isset($new->headerNames[$normalized])) {
-            unset($new->headers[$new->headerNames[$normalized]]);
-        }
         $new->headerNames[$normalized] = $header;
         $new->headers[$header] = $value;
 
@@ -87,11 +84,7 @@ trait MessageTrait
     public function withoutHeader($header): self
     {
         $normalized = \strtr($header, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
-        if (!isset($this->headerNames[$normalized])) {
-            return $this;
-        }
 
-        $header = $this->headerNames[$normalized];
         $new = clone $this;
         unset($new->headers[$header], $new->headerNames[$normalized]);
 
@@ -109,10 +102,6 @@ trait MessageTrait
 
     public function withBody(StreamInterface $body): self
     {
-        if ($body === $this->stream) {
-            return $this;
-        }
-
         $new = clone $this;
         $new->stream = $body;
 
