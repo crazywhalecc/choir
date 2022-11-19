@@ -12,7 +12,7 @@ trait RequestTrait
 
     private string $method;
 
-    private ?string $requestTarget;
+    private ?string $requestTarget = null;
 
     private ?UriInterface $uri;
 
@@ -68,10 +68,6 @@ trait RequestTrait
 
     public function withUri(UriInterface $uri, $preserveHost = false): self
     {
-        if ($uri === $this->uri) {
-            return $this;
-        }
-
         $new = clone $this;
         $new->uri = $uri;
 
@@ -84,7 +80,7 @@ trait RequestTrait
 
     private function updateHostFromUri(): void
     {
-        if ('' === $host = $this->uri->getHost()) {
+        if ('' === ($host = $this->uri->getHost())) {
             return;
         }
 
