@@ -30,4 +30,18 @@ class ConnectionMonitor
         }
         self::$tcp_fail_counts[$type] += $cnt;
     }
+
+    /**
+     * 获取 TCP 连接失败的计数
+     *
+     * @param  string $type 类型
+     * @return int    数量
+     */
+    public static function getTcpFailCount(string $type): int
+    {
+        if (!in_array($type, ['send', 'receive'])) {
+            return 0;
+        }
+        return self::$tcp_fail_counts[$type];
+    }
 }
