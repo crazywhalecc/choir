@@ -628,11 +628,10 @@ EOF;
         if (($this->settings['logger-level'] ?? 'info') === 'debug') {
             ConsoleLogger::$format = '[%date%] [#' . $worker_id . '] [%level%] %body%';
         }
-        if ($worker_id <= 1) {
-            $this->startListen();
-            foreach ($this->listen_ports as $port) {
-                $port->startListen();
-            }
+        // 监听连接
+        $this->startListen();
+        foreach ($this->listen_ports as $port) {
+            $port->startListen();
         }
 
         if ($worker_id !== null && PHP_OS_FAMILY !== 'Windows') {
