@@ -78,6 +78,9 @@ trait RequestTrait
         return $new;
     }
 
+    /**
+     * 从 Uri 或原始 Header 中更新 Host Header（有些请求，例如 ServerRequest 必须第一个 Header 为 Host）
+     */
     private function updateHostFromUri(): void
     {
         if ('' === ($host = $this->uri->getHost())) {
