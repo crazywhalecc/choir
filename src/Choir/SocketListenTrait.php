@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Choir;
 
+use Choir\Coroutine\Runtime;
 use Choir\EventLoop\EventHandler;
 use Choir\EventLoop\EventInterface;
 use Choir\Exception\ChoirException;
@@ -75,18 +76,12 @@ trait SocketListenTrait
      */
     public function emitEventCallback(string $name, ...$args): void
     {
-        static $fiber_stack = [];
-        if (PHP_VERSION_ID >= 80100 && ($this->settings['enable-fiber'] ?? false)) {
-            $fiber = new \Fiber(function ($name, ...$args) {
+        if (($impl = Runtime::getImpl()) !== null) {
+            $impl->create(function ($name, ...$args) {
                 isset($this->{$name}) && ($this->{$name})(...$args);
-            });
-            $fiber->start($name, ...$args);
-            if (!$fiber->isTerminated()) {
-                Server::logDebug('Fiber 可能挂起了');
-                $fiber_stack[spl_object_id($fiber)] = $fiber;
-            }
+            }, $name, ...$args);
         } else {
-            isset($this->{$name}) && ($this->{$name})(...$args);
+            isset($this->{$name}) && call_user_func($this->{$name}, ...$args);
         }
     }
 
@@ -155,6 +150,7 @@ trait SocketListenTrait
      */
     public function resumeAccept(): void
     {
+        Server::logDebug('Resuming accept from ' . $this->protocol_name);
         // Register a listener to be notified when server socket is ready to read.
         if (EventHandler::$event instanceof EventInterface && $this->pause_accept && $this->main_socket) {
             switch ($this->protocol->getTransport()) {
@@ -222,6 +218,8 @@ trait SocketListenTrait
         // 声明连接对象
         $tcp = new $proto_conn($new_socket, $remote_address, $this);
         Tcp::$connections[$tcp->getId()] = $tcp;
+
+        Server::logDebug('Accepting tcp connection from socket ' . $socket . '( ' . get_class($this) . ' )');
 
         // 调用 onConnect 回调
         try {

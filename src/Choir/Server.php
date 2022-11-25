@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 namespace Choir;
 
+use Choir\Coroutine\Runtime;
 use Choir\EventLoop\EventHandler;
 use Choir\EventLoop\Swoole;
 use Choir\Exception\ChoirException;
@@ -165,6 +166,10 @@ EOF;
             define('CHOIR_SINGLE_MODE', true);
         } else {
             define('CHOIR_SINGLE_MODE', false);
+        }
+
+        if (PHP_OS_FAMILY === 'Windows' && ($this->settings['worker-num'] ?? 0) !== 0) {
+            static::logDebug('Windows does not support multiple worker process, switching to single process mode');
         }
 
         // 是否展示 UI 列表（默认展示）
@@ -625,7 +630,9 @@ EOF;
      */
     protected function startWorker(?int $worker_id = null): void
     {
-        static::logDebug('Worker: ' . $worker_id . ' is starting');
+        if ($worker_id !== null) {
+            static::logDebug('Worker: ' . $worker_id . ' is starting');
+        }
         if (($this->settings['logger-level'] ?? 'info') === 'debug') {
             ConsoleLogger::$format = '[%date%] [#' . $worker_id . '] [%level%] %body%';
         }
@@ -674,6 +681,8 @@ EOF;
         }
 
         restore_error_handler();
+
+        Runtime::initCoroutineEnv();
 
         // 调用事件回调
         try {

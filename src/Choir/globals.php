@@ -80,3 +80,14 @@ function choir_id(): string
     }
     return $choir_token;
 }
+
+function call_func_stopwatch(callable $callback, bool $microseconds = true): float
+{
+    $time = microtime(true);
+    $callback();
+    $result = microtime(true) - $time;
+    if ($microseconds) {
+        $result = $result * 1000;
+    }
+    return round($result, 3);
+}

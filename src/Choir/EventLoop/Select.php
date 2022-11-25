@@ -352,7 +352,7 @@ class Select implements EventInterface
                     unset($this->event_timers[$timer_id]);
                 }
                 try {
-                    $task_data[0]($task_data[1]);
+                    $task_data[0](...$task_data[1]);
                 } catch (\Throwable $e) {
                     Server::logError(choir_exception_as_string($e));
                 }

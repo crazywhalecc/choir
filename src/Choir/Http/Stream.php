@@ -36,7 +36,7 @@ class Stream implements StreamInterface
     /** @var null|array|bool|mixed|void */
     private $uri;
 
-    private ?int $size;
+    private ?int $size = null;
 
     private function __construct()
     {

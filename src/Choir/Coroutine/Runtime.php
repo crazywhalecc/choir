@@ -63,4 +63,25 @@ class Runtime
     {
         return self::$impl;
     }
+
+    /**
+     * 创建一个协程并运行
+     *
+     * 在执行协程过程中，如果遇到 suspend，则立刻返回协程 ID
+     *
+     * @param callable $callback 回调
+     * @param mixed    ...$args  传参
+     */
+    public static function create(callable $callback, ...$args): int
+    {
+        return self::$impl->create($callback, ...$args);
+    }
+
+    /**
+     * 获取当前协程 ID
+     */
+    public static function getCid(): int
+    {
+        return self::$impl->getCid();
+    }
 }

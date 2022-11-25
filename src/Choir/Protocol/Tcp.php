@@ -87,6 +87,7 @@ class Tcp implements ConnectionInterface
         }
 
         // 加入全球化的 EventLoop 异步读取
+        Server::logDebug('添加异步读取 on ' . get_class($server));
         EventHandler::$event->onReadable($this->socket, [$this, 'onReadConnection']);
 
         // 设置缓存区和包大小，默认 1MB 和 10MB
@@ -416,6 +417,7 @@ class Tcp implements ConnectionInterface
      */
     private function destroyConnection(): void
     {
+        Server::logDebug('destroying connection #' . $this->id);
         // 已关闭就不管了
         if ($this->status === CHOIR_TCP_CLOSED) {
             return;

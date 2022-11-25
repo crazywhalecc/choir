@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Choir\Http\Client;
 
+use Choir\Coroutine\Runtime;
+use Choir\EventLoop\EventHandler;
+use Choir\EventLoop\EventInterface;
+use Choir\Exception\RuntimeException;
 use Choir\Http\Client\Exception\NetworkException;
 use Choir\Http\Client\Exception\RequestException;
 use Choir\Http\Response;
@@ -16,7 +20,7 @@ use Psr\Http\Message\ResponseInterface;
  * Stream HTTP Client based on PSR-18.
  * @see https://github.com/php-http/socket-client
  */
-class StreamClient extends ClientBase implements ClientInterface /* , AsyncClientInterface */
+class StreamClient extends ClientBase implements ClientInterface, AsyncClientInterface
 {
     private array $config = [
         'remote_socket' => null,
@@ -26,6 +30,7 @@ class StreamClient extends ClientBase implements ClientInterface /* , AsyncClien
         'ssl' => null,
         'write_buffer_size' => 8192,
         'ssl_method' => STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT,
+        'event_loop' => null,
     ];
 
     /**
@@ -35,6 +40,12 @@ class StreamClient extends ClientBase implements ClientInterface /* , AsyncClien
     {
         $this->config = array_merge($this->config, $config);
         $this->config['stream_context'] = stream_context_create($this->config['stream_context_options'], $this->config['stream_context_param']);
+        if ($this->config['event_loop'] === null || !($this->config['event_loop'] instanceof EventInterface)) {
+            $this->config['event_loop'] = EventHandler::$event;
+            if (Runtime::getCid() !== -1) {
+                $this->config['coroutine'] = true;
+            }
+        }
     }
 
     public function setTimeout(int $timeout): void
@@ -80,8 +91,9 @@ class StreamClient extends ClientBase implements ClientInterface /* , AsyncClien
     /**
      * @throws RequestException
      * @throws NetworkException
+     * @throws RuntimeException
      */
-    /*public function sendRequestAsync(RequestInterface $request, callable $success_callback, callable $error_callback)
+    public function sendRequestAsync(RequestInterface $request, callable $success_callback, callable $error_callback)
     {
         $remote = $this->config['remote_socket'];
         $useSsl = $this->config['ssl'];
@@ -99,29 +111,34 @@ class StreamClient extends ClientBase implements ClientInterface /* , AsyncClien
         }
 
         $socket = $this->createSocket($request, $remote, $useSsl);
-        if (Driver::getActiveDriverClass() === 'workerman') {
+
+        if (($loop = $this->config['event_loop']) instanceof EventInterface) {
             stream_set_blocking($socket, false);
-            Worker::$globalEvent->add($socket, EventInterface::EV_WRITE, function ($socket) use ($request, $success_callback) {
-                $this->writeRequest($socket, $request, $this->config['write_buffer_size']);
-                Worker::$globalEvent->del($socket, EventInterface::EV_WRITE);
-                Worker::$globalEvent->add($socket, EventInterface::EV_READ, function ($socket) use ($request, $success_callback) {
-                    $response = $this->readResponse($request, $socket);
+            /* @var EventInterface $loop */
+            $loop->onWritable($socket, function ($socket) use ($request, $loop, $success_callback, $error_callback) {
+                $loop->offWritable($socket);
+                try {
+                    $this->writeRequest($socket, $request, $this->config['write_buffer_size']);
+                } catch (NetworkException $e) {
+                    $error_callback($e);
+                    return;
+                }
+                $loop->onReadable($socket, function ($socket) use ($request, $loop, $success_callback, $error_callback) {
+                    $loop->offReadable($socket);
+                    try {
+                        $response = $this->readResponse($request, $socket);
+                    } catch (NetworkException $e) {
+                        $error_callback($e);
+                        return;
+                    }
                     $success_callback($response);
-                    Worker::$globalEvent->del($socket, EventInterface::EV_READ);
                 });
             });
-        } elseif (Driver::getActiveDriverClass() === 'swoole') {
-            Event::add($socket, null, function ($socket) use ($request, $success_callback) {
-                $this->writeRequest($socket, $request, $this->config['write_buffer_size']);
-                Event::del($socket);
-                Event::add($socket, function ($socket) use ($request, $success_callback) {
-                    $response = $this->readResponse($request, $socket);
-                    $success_callback($response);
-                    Event::del($socket);
-                });
-            });
+        } else {
+            // 没部署好 EventLoop 就想要异步？
+            throw new RuntimeException('Event Loop not initialized while using stream async client');
         }
-    }*/
+    }
 
     /**
      * Create the socket to write request and read response on it.

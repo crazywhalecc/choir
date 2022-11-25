@@ -30,19 +30,4 @@ class ListenPort
         $this->protocol_name = $protocol_name;
         $this->initSocketListen();
     }
-
-    /**
-     * 设置事件回调
-     *
-     * @throws ChoirException
-     */
-    public function on(string $event, callable $callback): void
-    {
-        // 内部全部使用小写，便于存储
-        $event = strtolower($event);
-        if (!in_array($event, $this->supported_events)) {
-            throw new ChoirException('Unsupported event name: ' . $event);
-        }
-        $this->on_event[$event] = $callback;
-    }
 }

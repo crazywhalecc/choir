@@ -9,9 +9,12 @@ use Choir\EventLoop\EventHandler;
 use Choir\EventLoop\EventInterface;
 use Choir\Exception\RuntimeException;
 use Choir\ExecutionResult;
+use Choir\SingletonTrait;
 
 class FiberCoroutine implements CoroutineInterface
 {
+    use SingletonTrait;
+
     private static ?\SplStack $fiber_stacks = null;
 
     /** @var array<int, \Fiber> */
@@ -86,6 +89,7 @@ class FiberCoroutine implements CoroutineInterface
     {
         try {
             $v = self::$fiber_stacks->pop();
+            self::$fiber_stacks->push($v);
         } catch (\RuntimeException $e) {
             return -1;
         }
@@ -102,7 +106,7 @@ class FiberCoroutine implements CoroutineInterface
         if (EventHandler::$event instanceof EventInterface && ($cid = $this->getCid()) !== -1) {
             EventHandler::$event->delay($time, function ($cid) {
                 $this->resume($cid);
-            }, $cid);
+            }, [$cid]);
             $this->suspend();
             return;
         }

@@ -132,7 +132,6 @@ class HttpProtocol implements TcpProtocolInterface
         // 读缓存，不超过 2048Byte 的都可以缓存
         $cache = static::$enable_cache && !isset($tmp_buffer[2048]);
         if ($cache && isset($header_cache[$tmp_buffer])) {
-            echo "Using cached headers: {$tmp_buffer}\n";
             $headers = $header_cache[$tmp_buffer];
         } else {
             // 没缓存，则继续解析
@@ -144,7 +143,6 @@ class HttpProtocol implements TcpProtocolInterface
 
             // 可以缓存的话缓存一下
             if ($cache) {
-                echo 'Caching headers: ' . strlen($tmp_buffer) . PHP_EOL;
                 $header_cache[$tmp_buffer] = $headers;
                 if (\count($header_cache) > 128) {
                     unset($header_cache[key($header_cache)]);

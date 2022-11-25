@@ -18,7 +18,7 @@ use Swoole\Coroutine\Http\Client;
  */
 class SwooleClient extends ClientBase implements ClientInterface, AsyncClientInterface
 {
-    private $set = [];
+    private array $set = [];
 
     /**
      * @throws ClientException

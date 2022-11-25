@@ -41,7 +41,8 @@
             "Choir\\": "src/Choir"
         },
         "files": [
-            "src/Choir/globals.php"
+            "src/Choir/globals.php",
+            "src/Choir/alias.php"
         ]
     },
     "autoload-dev": {
