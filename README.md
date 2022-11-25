@@ -8,6 +8,10 @@ Choir 内部使用 PHP 原生的 Socket Server 实现了一个 TCP 和 UDP 的�
 
 Choir 基于部分 Workerman 的代码，功能与 Workerman 相似，但相较于底层的信号处理、包处理以及开放接口采用更加通用的 PSR 标准，便于融合其他框架。
 
+## Choir 文档
+
+> 在写了在写了。
+
 ## 与 Workerman 的不同
 
 ### 1. 重构目录结构
