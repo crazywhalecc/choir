@@ -32,6 +32,8 @@ class Frame implements FrameInterface
      */
     protected bool $finish;
 
+    private ?string $raw_cache = null;
+
     public function __construct($data, int $opcode, bool $mask, bool $fin)
     {
         $this->data = $data;
@@ -70,6 +72,10 @@ class Frame implements FrameInterface
      */
     public function getRaw(bool $masked = false): string
     {
+        var_dump($masked);
+        if ($this->raw_cache !== null) {
+            return $this->raw_cache;
+        }
         // FIN
         $byte_0 = ($this->finish ? 1 : 0) << 7;
         // Opcode
@@ -93,6 +99,6 @@ class Frame implements FrameInterface
             $encode_buffer = chr($byte_0) . chr($masked ? 255 : 127) . pack('xxxxN', $len) . $data;
         }
 
-        return $encode_buffer;
+        return $this->raw_cache = $encode_buffer;
     }
 }
