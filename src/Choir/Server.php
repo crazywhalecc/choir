@@ -23,7 +23,7 @@ use Psr\Log\LoggerInterface;
 use ZM\Logger\ConsoleLogger;
 use ZM\Logger\TablePrinter;
 
-class Server
+class Server extends SocketBase
 {
     /** 可监听端口的容器类对象，均 use 了此 trait */
     use SocketListenTrait;
@@ -46,12 +46,6 @@ EOF;
         'http' => HttpProtocol::class,
         'https' => HttpsProtocol::class,
     ];
-
-    /** @var string 协议名称 */
-    public string $protocol_name;
-
-    /** @var array 设置参数 */
-    public array $settings = [];
 
     /** @var int Server 实例的 ID */
     public int $id;

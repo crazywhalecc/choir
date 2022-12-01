@@ -9,13 +9,9 @@ use Choir\Exception\ChoirException;
 /**
  * 独立监听端口的类
  */
-class ListenPort
+class ListenPort extends SocketBase
 {
     use SocketListenTrait;
-
-    public string $protocol_name;
-
-    public array $settings = [];
 
     public Server $server;
 
