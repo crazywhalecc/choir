@@ -1,6 +1,6 @@
 # Choir
 
-一个纯 PHP 写的 Server 库，由 Workerman 改进而来，作为一个学习的项目而编写。
+一个纯 PHP 写的 Socket Server 和 Socket Client 库，由 Workerman 改进而来，作为一个学习的项目而编写。
 
 ## Choir 的功能
 
@@ -26,6 +26,8 @@ Choir 重构了 Workerman 的 Worker 结构，采用 Server 对象对服务进�
 
 重构协议层的接口，对协议的解析流程进行了调整。
 
+此外，Choir 对协议的实现均统一，即 Server 和 Client 同一套解析逻辑，Client 默认异步，在开启协程后可异步转协程同步。
+
 ### 4. 支持协程
 
 原生支持 Fiber 协程一键开启，使用 PHP 8.1 时自动开启纤程，且可通过传入的配置项切换使用 Swoole、Swow 协程库等。
@@ -41,6 +43,8 @@ Choir 同 Workerman 一样，默认提供了一些初始的参数显示和信号
 ## Choir 的不足
 
 Choir 目前仅实现了基础的 Server 和 Client 组件，其他附带的组件暂时正在开发中。
+
+Choir 暂无法直接整合其他 Workerman 现成组件，后期会添加适配器。
 
 ## HTTP 服务器样例
 
