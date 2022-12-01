@@ -14,7 +14,7 @@ abstract class SocketBase
 
     public ProtocolInterface $protocol;
 
-    protected string $protocol_name;
+    public string $protocol_name;
 
     /**
      * 设置事件回调

@@ -46,6 +46,8 @@ class RequestTraitTest extends TestCase
     public function testWithMethod()
     {
         $this->assertNotSame(self::$request->withMethod(self::$request->getMethod()), self::$request);
+        $this->expectException(\InvalidArgumentException::class);
+        self::$request->withMethod(123);
     }
 
     public function testGetMethod()
@@ -62,6 +64,8 @@ class RequestTraitTest extends TestCase
         $this->assertEquals('/ppp?help=123', $req->getRequestTarget());
         // Original uri is request target
         $this->assertEquals('/test?pwq=123', self::$request->getRequestTarget());
+        $this->expectException(\InvalidArgumentException::class);
+        $req->withRequestTarget(' ');
     }
 
     public function testUpdateHostFromUri()
