@@ -14,12 +14,16 @@ class_alias(Server::class, 'choir_websocket_server');
 /**
  * 创建协程的快捷方法
  *
- * @param callable    $callback 回调
- * @param array|mixed ...$args  参数们
+ * @param  callable                          $callback 回调
+ * @param  array|mixed                       ...$args  参数们
+ * @throws \Choir\Exception\RuntimeException
  */
 function choir_go(callable $callback, ...$args): int
 {
-    return Runtime::getImpl()->create($callback, ...$args);
+    if (Runtime::getImpl() !== null) {
+        return Runtime::getImpl()->create($callback, ...$args);
+    }
+    throw new \Choir\Exception\RuntimeException('Event Loop is not initialized yet');
 }
 
 /**
@@ -29,5 +33,8 @@ function choir_go(callable $callback, ...$args): int
  */
 function choir_sleep($time)
 {
-    return Runtime::getImpl()->sleep($time);
+    if (Runtime::getImpl() !== null) {
+        return Runtime::getImpl()->sleep($time);
+    }
+    return sleep($time);
 }

@@ -7,11 +7,11 @@ declare(strict_types=1);
 namespace Choir\Protocol;
 
 use Choir\EventLoop\EventHandler;
-use Choir\ListenPort;
 use Choir\Monitor\ConnectionMonitor;
 use Choir\Protocol\Context\DefaultContext;
 use Choir\Protocol\Context\WebSocketContext;
 use Choir\Server;
+use Choir\SocketBase;
 use Psr\Http\Message\StreamInterface;
 
 /**
@@ -31,8 +31,8 @@ class Tcp implements ConnectionInterface
     /** @var string 客户端地址 */
     protected string $remote_address;
 
-    /** @var ListenPort|Server 监听端口的主体，可以是监听端口对象，也可以是 Server 对象 */
-    protected $server;
+    /** @var SocketBase 监听端口的主体，可以是监听端口对象，也可以是 Server 对象 */
+    protected $base;
 
     /** @var int 连接 ID 自增计数器 */
     private static int $id_counter = 0;
@@ -67,9 +67,12 @@ class Tcp implements ConnectionInterface
     /** @var int 写入的 Buffer 字节长度 */
     private int $bytes_written = 0;
 
-    final public function __construct($socket, string $remote_address, $server)
+    /** @var bool 是否是 client 模式 */
+    private bool $client_mode = false;
+
+    final public function __construct($socket, string $remote_address, $base)
     {
-        $this->server = $server;
+        $this->base = $base;
         $this->remote_address = $remote_address;
         $this->socket = $socket;
         $this->id = self::$id_counter++;
@@ -87,15 +90,20 @@ class Tcp implements ConnectionInterface
         }
 
         // 加入全球化的 EventLoop 异步读取
-        Server::logDebug('添加异步读取 on ' . get_class($server));
+        Server::logDebug('添加异步读取 on ' . get_class($base));
         EventHandler::$event->onReadable($this->socket, [$this, 'onReadConnection']);
 
         // 设置缓存区和包大小，默认 1MB 和 10MB
-        $this->max_send_buffer_size = intval($this->server->settings['max-send-buffer-size'] ?? 1048576);
-        $this->max_package_size = intval($this->server->settings['max-package-size'] ?? 10485760);
+        $this->max_send_buffer_size = intval($this->base->settings['max-send-buffer-size'] ?? 1048576);
+        $this->max_package_size = intval($this->base->settings['max-package-size'] ?? 10485760);
 
         // 构建新的上下文对象
-        $this->context = $this->server->protocol->makeContext();
+        $this->context = $this->base->protocol->makeContext();
+    }
+
+    public function asClient(bool $client_mode)
+    {
+        $this->client_mode = $client_mode;
     }
 
     /**
@@ -108,8 +116,8 @@ class Tcp implements ConnectionInterface
     public function onReadConnection($socket, bool $check_eof = true): void
     {
         // SSL 握手
-        if ($this->server->protocol->getTransport() === 'ssl' && $this->ssl_handshake_completed !== true) {
-            if ($this->handshakeSsl($socket)) {
+        if ($this->base->protocol->getTransport() === 'ssl' && $this->ssl_handshake_completed !== true) {
+            if ($this->handshakeSsl($socket, $this->client_mode)) {
                 $this->ssl_handshake_completed = true;
                 if ($this->send_buffer) {
                     EventHandler::$event->onWritable($socket, [$this, 'onWriteConnection']);
@@ -133,7 +141,7 @@ class Tcp implements ConnectionInterface
                 return;
             }
         } else {
-            $this->server->emitEventCallback('receive', $this, $buffer);
+            $this->base->emitEventCallback('receive', $this, $buffer);
             // 读取成功？
             // $this->bytes_read += strlen($buffer);
             $this->recv_buffer .= $buffer;
@@ -150,7 +158,7 @@ class Tcp implements ConnectionInterface
             // 包长度需要传入协议来获取，如果0的话，说明还不知道当前package的长度，需要获取下
             if ($this->current_package_length === 0) {
                 try {
-                    $this->current_package_length = $this->server->protocol->checkPackageLength($this->recv_buffer, $this);
+                    $this->current_package_length = $this->base->protocol->checkPackageLength($this->recv_buffer, $this);
                 } catch (\Throwable $e) {
                 }
                 // 协议也没能解析出来，那么这个包不管它，继续等待传入，并拼接
@@ -188,7 +196,7 @@ class Tcp implements ConnectionInterface
             $this->current_package_length = 0;
             try {
                 // 解析一个 package，调用协议解析函数，传入内容，回调由此处协议进行处理，TCP 层不做处理
-                $this->server->protocol->execute($this->server, $once_buffer, $this);
+                $this->base->protocol->execute($this->base, $once_buffer, $this);
             } catch (\Throwable $e) {
                 Server::logError(choir_exception_as_string($e));
             }
@@ -203,7 +211,7 @@ class Tcp implements ConnectionInterface
     {
         set_error_handler(function () {
         });
-        if ($this->server->protocol->getTransport() === 'ssl') {
+        if ($this->base->protocol->getTransport() === 'ssl') {
             $len = @\fwrite($socket, $this->send_buffer, 8192);
         } else {
             $len = @\fwrite($socket, $this->send_buffer);
@@ -297,7 +305,7 @@ class Tcp implements ConnectionInterface
         }
 
         // 不是建立连接的状态，或者是 ssl 模式但没完成握手，就加buffer
-        if ($this->status !== CHOIR_TCP_ESTABLISHED || $this->server->protocol->getTransport() === 'ssl' && !$this->ssl_handshake_completed) {
+        if ($this->status !== CHOIR_TCP_ESTABLISHED || $this->base->protocol->getTransport() === 'ssl' && !$this->ssl_handshake_completed) {
             if ($this->send_buffer && $this->isBufferFull()) {
                 // 增加失败计数
                 ConnectionMonitor::addTcpFailCount('send');
@@ -313,7 +321,7 @@ class Tcp implements ConnectionInterface
         // 尝试直接发送数据
         if ($this->send_buffer === '') {
             // ssl 走 EventLoop
-            if ($this->server->protocol->getTransport() === 'ssl') {
+            if ($this->base->protocol->getTransport() === 'ssl') {
                 EventHandler::$event->onWritable($this->socket, [$this, 'onWriteConnection']);
                 $this->send_buffer = $buffer;
                 $this->checkBufferFull();
@@ -371,11 +379,12 @@ class Tcp implements ConnectionInterface
     /**
      * SSL 握手
      *
-     * @param  resource   $socket
+     * @param  resource   $socket socket 资源
+     * @param  bool       $client 是否为客户端，默认为服务端握手
      * @throws \Throwable
      * @return bool|int
      */
-    private function handshakeSsl($socket)
+    public function handshakeSsl($socket, bool $client = false)
     {
         // 连接到尽头了~~
         if (feof($socket)) {
@@ -383,8 +392,7 @@ class Tcp implements ConnectionInterface
             return false;
         }
 
-        // TODO: 这里是不是未来需要实现 AsyncTcpConnection？
-        $type = STREAM_CRYPTO_METHOD_SSLv2_SERVER | STREAM_CRYPTO_METHOD_SSLv23_SERVER;
+        $type = $client ? (STREAM_CRYPTO_METHOD_SSLv2_CLIENT | STREAM_CRYPTO_METHOD_SSLv23_CLIENT) : (STREAM_CRYPTO_METHOD_SSLv2_SERVER | STREAM_CRYPTO_METHOD_SSLv23_SERVER);
 
         // 隐藏报错
         set_error_handler(function ($errno, $errstr) {
@@ -410,12 +418,27 @@ class Tcp implements ConnectionInterface
         return true;
     }
 
+    public function getStatus(): int
+    {
+        return $this->status;
+    }
+
+    public function setStatus(int $status): void
+    {
+        $this->status = $status;
+    }
+
+    public function isSendBufferEmpty(): bool
+    {
+        return $this->send_buffer === '';
+    }
+
     /**
      * 销毁 TCP 连接
      *
      * @throws \Throwable
      */
-    private function destroyConnection(): void
+    public function destroyConnection(): void
     {
         Server::logDebug('destroying connection #' . $this->id);
         // 已关闭就不管了
@@ -436,7 +459,7 @@ class Tcp implements ConnectionInterface
         $this->status = CHOIR_TCP_CLOSED;
 
         // 调用回调
-        $this->server->emitEventCallback('close', $this);
+        $this->base->emitEventCallback('close', $this);
 
         // 重置
         $this->send_buffer = $this->recv_buffer = '';
@@ -449,6 +472,16 @@ class Tcp implements ConnectionInterface
             // TODO: Workerman 记录了，但 Choir 不需要，所以是不是就不写了？
             unset(static::$connections[$this->getId()]);
         }
+    }
+
+    public function setRemoteAddress(string $address)
+    {
+        $this->remote_address = $address;
+    }
+
+    public function isClientMode(): bool
+    {
+        return $this->client_mode;
     }
 
     /**

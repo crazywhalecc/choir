@@ -227,7 +227,7 @@ class WebSocketProtocol extends HttpProtocol
             }
 
             // 不是缓存，现在生成或辨别
-            $request = static::parseRawHttp($package);
+            $request = static::parseRawRequest($package);
             // HTTP Header 部分 + 换行符的长度
             $header_length = strpos($package, "\r\n\r\n") + 4;
 

@@ -46,15 +46,7 @@ const CHOIR_WS_CLOSE_SERVER_ERROR = 1011;
 const CHOIR_WS_CLOSE_TLS = 1015;
 
 // Choir 所需的临时目录
-if (PHP_OS_FAMILY === 'Windows') {
-    define('CHOIR_TMP_DIR', 'C:\\Windows\\Temp');
-} elseif (!empty(getenv('TMPDIR'))) {
-    define('CHOIR_TMP_DIR', getenv('TMPDIR'));
-} elseif (is_writable('/tmp')) {
-    define('CHOIR_TMP_DIR', '/tmp');
-} else {
-    define('CHOIR_TMP_DIR', getcwd() . '/.zm-tmp');
-}
+define('CHOIR_TMP_DIR', PHP_OS_FAMILY === 'Windows' ? 'C:\\Windows\\Temp' : (!empty($env = getenv('TMPDIR')) ? $env : (is_writable('/tmp') ? '/tmp' : (getcwd() . '/.zm-tmp'))));
 
 // 全局方法部分
 

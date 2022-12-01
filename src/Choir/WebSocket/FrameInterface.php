@@ -14,5 +14,5 @@ interface FrameInterface
 
     public function isFinish(): bool;
 
-    public function getRaw(): string;
+    public function getRaw(bool $masked = false): string;
 }

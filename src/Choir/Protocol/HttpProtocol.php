@@ -11,6 +11,7 @@ use Choir\Http\UploadedFile;
 use Choir\ListenPort;
 use Choir\Protocol\Context\DefaultContext;
 use Choir\Server;
+use Choir\SocketBase;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -99,7 +100,7 @@ class HttpProtocol implements TcpProtocolInterface
      * @throws ProtocolException
      * @throws ValidatorException
      */
-    public static function parseRawHttp(string $raw): ServerRequestInterface
+    public static function parseRawRequest(string $raw): ServerRequestInterface
     {
         // 标记缓存
         static $header_cache = [];
@@ -351,6 +352,11 @@ class HttpProtocol implements TcpProtocolInterface
             return $input[$buffer];
         }
 
+        // 如果是 Client Mode，就给它转到
+        if ($connection->isClientMode()) {
+            return $this->checkResponsePackageLength($buffer, $connection);
+        }
+
         // 查找 Header Body 分隔的位置
         $crlf_pos = strpos($buffer, "\r\n\r\n");
         if ($crlf_pos === false) {
@@ -425,6 +431,11 @@ class HttpProtocol implements TcpProtocolInterface
             return false;
         }
 
+        // client 模式，就解析的是 Response
+        if ($connection->isClientMode()) {
+            return $this->executeResponse($server, $package, $connection);
+        }
+
         // 先检查缓存
         $cache = static::$enable_cache && !isset($package[512]);
         if ($cache && isset(self::$requests_cache[$package])) {
@@ -436,7 +447,7 @@ class HttpProtocol implements TcpProtocolInterface
         }
 
         // 不是缓存，现在生成
-        $request = static::parseRawHttp($package);
+        $request = static::parseRawRequest($package);
         $server->emitEventCallback('request', $connection, $request);
         // 缓存一下
         if ($cache) {
@@ -463,4 +474,51 @@ class HttpProtocol implements TcpProtocolInterface
     public function makeContext(): object {return new DefaultContext(); }
 
     public function getConnectionClass(): string {return HttpConnection::class; }
+
+    private function checkResponsePackageLength(string $buffer, Tcp $connection): int
+    {
+        // 查找 Header Body 分隔的位置
+        $crlf_pos = strpos($buffer, "\r\n\r\n");
+        if ($crlf_pos === false) {
+            return 0;
+        }
+
+        // 头长度
+        $length = $crlf_pos + 4;
+        // HTTP 协议第一行，包含 GET 路径和参数以及 HTTP 协议版本及方法
+        [$http_version, $code, $msg] = \explode(' ', \strstr($buffer, "\r\n", true), 3);
+        // 协议必须为 HTTP
+        if (strstr($http_version, '/', true) !== 'HTTP') {
+            $connection->close();
+            return 0;
+        }
+        $http_version = explode('/', $http_version)[1];
+
+        // 解析头
+        $header = substr($buffer, 0, $crlf_pos);
+        if ($pos = \strpos($header, "\r\nContent-Length: ")) {
+            $length = $length + (int) \substr($header, $pos + 18, 10);
+            $has_content_length = true;
+        } elseif (\preg_match("/\r\ncontent-length: ?(\\d+)/i", $header, $match)) {
+            $length = $length + intval($match[1]);
+            $has_content_length = true;
+        } else {
+            $has_content_length = false;
+            if (stripos($header, "\r\nTransfer-Encoding:") !== false) {
+                $connection->close();
+                return 0;
+            }
+        }
+        if ($has_content_length) {
+            return $length;
+        }
+
+        return 0;
+    }
+
+    private function executeResponse(SocketBase $base, string $package, Tcp $connection): bool
+    {
+        // TODO: 解析
+        return false;
+    }
 }
