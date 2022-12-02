@@ -12,6 +12,7 @@ use Choir\ListenPort;
 use Choir\Protocol\Context\DefaultContext;
 use Choir\Server;
 use Choir\SocketBase;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -65,6 +66,11 @@ class HttpProtocol implements TcpProtocolInterface
      */
     private static array $requests_cache = [];
 
+    /**
+     * @var array<string, ResponseInterface> 响应对象的小响应缓存列表
+     */
+    private static array $response_cache = [];
+
     public function __construct(string $host, int $port, string $protocol_name)
     {
         $this->protocol_name = $protocol_name;
@@ -81,6 +87,23 @@ class HttpProtocol implements TcpProtocolInterface
     }
 
     /**
+     * 解析 HTTP 响应包，返回一个符合 PSR-7 的 Response 对象
+     * 解析失败则抛出 ProtocolException 异常
+     *
+     * @param  string            $raw 生数据
+     * @throws ProtocolException
+     */
+    public static function parseRawResponse(string $raw): ResponseInterface
+    {
+        // 解析 HTTP 协议第一行
+        [$http_version, $code, $msg] = \explode(' ', \strstr($raw, "\r\n", true), 3);
+        $http_version = explode('/', $http_version)[1];
+
+        [$header, $body] = static::parseHeaderAndBody($raw);
+        return HttpFactory::createResponse($code, $msg, $header, $body, $http_version);
+    }
+
+    /**
      * 解析 Header 一行，返回 Key，Value
      *
      * @param string $content 头内容
@@ -91,32 +114,10 @@ class HttpProtocol implements TcpProtocolInterface
         return [strtolower($split[0]), ltrim($split[1] ?? '')];
     }
 
-    /**
-     * 解析 HTTP 请求包，返回一个符合 PSR-7 的 ServerRequest 对象
-     *
-     * 解析失败则抛出 ProtocolException 异常
-     *
-     * @param  string             $raw 生数据
-     * @throws ProtocolException
-     * @throws ValidatorException
-     */
-    public static function parseRawRequest(string $raw): ServerRequestInterface
+    public static function parseHeaderAndBody(string $raw): array
     {
         // 标记缓存
         static $header_cache = [];
-
-        // 解析 HTTP 协议第一行
-        $first_line = \strstr($raw, "\r\n", true);
-        $tmp = \explode(' ', $first_line, 3);
-
-        // 解析请求方法
-        $request_method = $tmp[0];
-
-        // 解析 URI
-        $uri = $tmp[1] ?? '/';
-
-        // 解析版本
-        $version = \explode('/', $tmp[2])[1] ?? '1.1';
 
         // 解析 Headers
         $headers = [];
@@ -153,6 +154,34 @@ class HttpProtocol implements TcpProtocolInterface
 
         // 解析 Body
         $body = substr($raw, \strpos($raw, "\r\n\r\n") + 4);
+        return [$headers, $body];
+    }
+
+    /**
+     * 解析 HTTP 请求包，返回一个符合 PSR-7 的 ServerRequest 对象
+     *
+     * 解析失败则抛出 ProtocolException 异常
+     *
+     * @param  string             $raw 生数据
+     * @throws ProtocolException
+     * @throws ValidatorException
+     */
+    public static function parseRawRequest(string $raw): ServerRequestInterface
+    {
+        // 解析 HTTP 协议第一行
+        $first_line = \strstr($raw, "\r\n", true);
+        $tmp = \explode(' ', $first_line, 3);
+
+        // 解析请求方法
+        $request_method = $tmp[0];
+
+        // 解析 URI
+        $uri = $tmp[1] ?? '/';
+
+        // 解析版本
+        $version = \explode('/', $tmp[2])[1] ?? '1.1';
+
+        [$headers, $body] = static::parseHeaderAndBody($raw);
 
         // 生成对象
         $request = HttpFactory::createServerRequest(
@@ -475,6 +504,9 @@ class HttpProtocol implements TcpProtocolInterface
 
     public function getConnectionClass(): string {return HttpConnection::class; }
 
+    /**
+     * @throws \Throwable
+     */
     private function checkResponsePackageLength(string $buffer, Tcp $connection): int
     {
         // 查找 Header Body 分隔的位置
@@ -486,13 +518,12 @@ class HttpProtocol implements TcpProtocolInterface
         // 头长度
         $length = $crlf_pos + 4;
         // HTTP 协议第一行，包含 GET 路径和参数以及 HTTP 协议版本及方法
-        [$http_version, $code, $msg] = \explode(' ', \strstr($buffer, "\r\n", true), 3);
+        [$http_version, $code] = \explode(' ', \strstr($buffer, "\r\n", true), 3);
         // 协议必须为 HTTP
-        if (strstr($http_version, '/', true) !== 'HTTP') {
+        if (strstr($http_version, '/', true) !== 'HTTP' || !is_numeric($code)) {
             $connection->close();
             return 0;
         }
-        $http_version = explode('/', $http_version)[1];
 
         // 解析头
         $header = substr($buffer, 0, $crlf_pos);
@@ -516,9 +547,32 @@ class HttpProtocol implements TcpProtocolInterface
         return 0;
     }
 
+    /**
+     * @throws ProtocolException
+     * @throws \Throwable
+     */
     private function executeResponse(SocketBase $base, string $package, Tcp $connection): bool
     {
-        // TODO: 解析
-        return false;
+        // 先检查缓存
+        $cache = static::$enable_cache && !isset($package[512]);
+        if ($cache && isset(self::$response_cache[$package])) {
+            $response = self::$response_cache[$package];
+            Server::logDebug('Using response cache: ' . strlen($package));
+            // 执行 HTTP Request 回调
+            $base->emitEventCallback('response', $connection, $response);
+            return true;
+        }
+        // 没缓存，再解析
+        $response = static::parseRawResponse($package);
+        $base->emitEventCallback('response', $connection, $response);
+        // 缓存一下
+        if ($cache) {
+            Server::logDebug('Caching response cache: ' . strlen($package));
+            self::$response_cache[$package] = $response;
+            if (count(self::$response_cache) > 512) {
+                unset(self::$response_cache[key(self::$response_cache)]);
+            }
+        }
+        return true;
     }
 }

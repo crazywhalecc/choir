@@ -20,7 +20,7 @@ use Swoole\WebSocket\Frame;
 /**
  * Swoole HTTP Client based on PSR-18.
  */
-class SwooleClient extends ClientBase implements ClientInterface, AsyncClientInterface, UpgradableClientInterface
+class SwooleClient implements TimeoutInterface, ClientInterface, AsyncClientInterface, UpgradableClientInterface
 {
     protected ?Client $client = null;
 

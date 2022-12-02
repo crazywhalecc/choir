@@ -12,6 +12,7 @@ use Choir\Http\Client\Exception\NetworkException;
 use Choir\Http\Client\Exception\RequestException;
 use Choir\Http\Response;
 use Choir\Http\Stream;
+use Choir\TcpClient;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -20,7 +21,7 @@ use Psr\Http\Message\ResponseInterface;
  * Stream HTTP Client based on PSR-18.
  * @see https://github.com/php-http/socket-client
  */
-class StreamClient extends ClientBase implements ClientInterface, AsyncClientInterface
+class StreamClient implements TimeoutInterface, ClientInterface, AsyncClientInterface
 {
     private array $config = [
         'remote_socket' => null,

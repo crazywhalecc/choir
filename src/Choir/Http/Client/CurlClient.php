@@ -17,7 +17,7 @@ use Psr\Http\Message\ResponseInterface;
  * Curl HTTP Client based on PSR-18.
  * @see https://github.com/sunrise-php/http-client-curl/blob/master/src/Client.php
  */
-class CurlClient extends ClientBase implements ClientInterface
+class CurlClient implements ClientInterface, TimeoutInterface
 {
     protected array $curl_options;
 

@@ -115,7 +115,7 @@ class TcpClient extends SocketBase
         }
 
         // 连接失败，调用失败
-        /* @noinspection PhpConditionAlreadyCheckedInspection @phpstan-ignore-next-line */
+        /* @phpstan-ignore-next-line */
         if ($this->tcp_connection->getStatus() === CHOIR_TCP_CLOSING) {
             /* @phpstan-ignore-next-line */
             $this->tcp_connection->destroyConnection();

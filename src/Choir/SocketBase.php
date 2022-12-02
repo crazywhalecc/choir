@@ -8,12 +8,18 @@ use Choir\Coroutine\Runtime;
 use Choir\Exception\ChoirException;
 use Choir\Protocol\ProtocolInterface;
 
+/**
+ * Socket 连接的抽象类，提供了底层的事件回调函数及配置成员变量
+ */
 abstract class SocketBase
 {
+    /** @var array 传入的配置参数 */
     public array $settings = [];
 
+    /** @var ProtocolInterface 协议操作对象本身 */
     public ProtocolInterface $protocol;
 
+    /** @var string 协议字符串，需调用构建函数时初始化 */
     public string $protocol_name;
 
     /**
