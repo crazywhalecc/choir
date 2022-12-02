@@ -12,7 +12,6 @@ use Choir\Http\Client\Exception\NetworkException;
 use Choir\Http\Client\Exception\RequestException;
 use Choir\Http\Response;
 use Choir\Http\Stream;
-use Choir\TcpClient;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
