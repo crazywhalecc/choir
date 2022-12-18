@@ -201,7 +201,8 @@ trait SocketListenTrait
         if (!isset(Server::$supported_protocol[strtolower($parse['scheme'])])) throw new ValidatorException("protocol '{$parse['scheme']}' is not supported yet");
 
         // 通过协议声明初始协议操作对象
-        $this->protocol = new (Server::$supported_protocol[$parse['scheme']])($parse['host'], $parse['port'], $this->protocol_name);
+        $class = Server::$supported_protocol[strtolower($parse['scheme'])];
+        $this->protocol = new $class($parse['host'], $parse['port'], $this->protocol_name);
         // 协议声明后，获取协议支持的回调列表
         $this->supported_events = $this->getSupportedEvents();
 
