@@ -23,6 +23,8 @@ interface CoroutineInterface
      */
     public function create(callable $callback, ...$args): int;
 
+    public function exists(int $cid): bool;
+
     /**
      * 挂起当前协程
      *

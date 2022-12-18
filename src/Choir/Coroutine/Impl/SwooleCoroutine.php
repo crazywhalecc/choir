@@ -27,13 +27,18 @@ class SwooleCoroutine implements CoroutineInterface
 
     public function suspend()
     {
-        Coroutine::yield();
+        Coroutine::suspend();
         if (isset(self::$resume_values[$this->getCid()])) {
             $value = self::$resume_values[$this->getCid()];
             unset(self::$resume_values[$this->getCid()]);
             return $value;
         }
         return null;
+    }
+
+    public function exists(int $cid): bool
+    {
+        return Coroutine::exists($cid);
     }
 
     public function resume(int $cid, $value = null)

@@ -47,6 +47,11 @@ class HttpProtocol implements TcpProtocolInterface
     public static int $max_form_data_files = 1024;
 
     /**
+     * @var bool 是否启用 chunked body 自动合并为完整的
+     */
+    public static bool $enable_chunk_merge = true;
+
+    /**
      * @var string 地址
      */
     protected string $host;
@@ -71,9 +76,12 @@ class HttpProtocol implements TcpProtocolInterface
      */
     private static array $response_cache = [];
 
-    public function __construct(string $host, int $port, string $protocol_name)
+    public function __construct(string $host, ?int $port, string $protocol_name)
     {
         $this->protocol_name = $protocol_name;
+        if ($port === null) {
+            $port = parse_url($protocol_name)['scheme'] === 'https' ? 443 : 80;
+        }
         $this->port = $port;
         $this->host = $host;
         // Choir HTTP 临时上传的目录
@@ -154,7 +162,45 @@ class HttpProtocol implements TcpProtocolInterface
 
         // 解析 Body
         $body = substr($raw, \strpos($raw, "\r\n\r\n") + 4);
+
+        // 如果是 chunked 的话，是否解析 chunked
+        if (static::$enable_chunk_merge && isset($headers['transfer-encoding']) && implode(', ', $headers['transfer-encoding']) === 'chunked') {
+            unset($headers['transfer-encoding']);
+            $body = static::mergeChunkedBody($body);
+        }
+
         return [$headers, $body];
+    }
+
+    public static function calculateChunkLength(string $buffer, &$content = ''): int
+    {
+        // 合并长度
+        $len = 0;
+        $content = '';
+        while (($pos = strpos($buffer, "\r\n")) !== false) {
+            // 获取长度元素
+            $i_len = hexdec(substr($buffer, 0, $pos));
+            // 如果一开始的值不是数字，表明是个坏的chunk，返回-1，断开连接
+            if ($i_len === -1) {
+                return -1;
+            }
+            // 如果是0，就看后面是不是跟了两个\r\n，是的话就返回长度
+            if ($i_len === 0 && strpos($buffer, "\r\n\r\n") === 1) {
+                return $len;
+            }
+            // 将获取到的长度值加到总长度里
+            $len += $i_len;
+            $content .= substr($buffer, $pos + 2, $i_len);
+            // buffer 削减到 该长度的内容后面
+            $buffer = substr($buffer, $pos + 2 + $i_len);
+            // 下面的部分应该是一段数据的结尾，如果不是的话，可能是当前TCP连接没接收全数据，返回-2表示需要继续接收
+            if (strpos($buffer, "\r\n") !== 0) {
+                return -2;
+            }
+            // 到这里的话，接下来的内容就是判断0块了
+            $buffer = substr($buffer, 2);
+        }
+        return -3;
     }
 
     /**
@@ -231,6 +277,15 @@ class HttpProtocol implements TcpProtocolInterface
         }
 
         return $request;
+    }
+
+    public static function mergeChunkedBody(string $body): string
+    {
+        $len = static::calculateChunkLength($body, $content);
+        if ($len >= 0) {
+            return $content;
+        }
+        return '';
     }
 
     /**
@@ -496,7 +551,7 @@ class HttpProtocol implements TcpProtocolInterface
 
     public function getBuiltinTransport(): string {return 'tcp'; }
 
-    public function getProtocolEvents(): array {return ['request']; }
+    public function getProtocolEvents(): array {return ['request', 'response']; }
 
     public function getProtocolName(): string {return $this->protocol_name; }
 
@@ -509,6 +564,7 @@ class HttpProtocol implements TcpProtocolInterface
      */
     private function checkResponsePackageLength(string $buffer, Tcp $connection): int
     {
+        // echo "=============\n{$buffer}\n*****" . strlen($buffer) . "******\n";
         // 查找 Header Body 分隔的位置
         $crlf_pos = strpos($buffer, "\r\n\r\n");
         if ($crlf_pos === false) {
@@ -536,8 +592,18 @@ class HttpProtocol implements TcpProtocolInterface
         } else {
             $has_content_length = false;
             if (stripos($header, "\r\nTransfer-Encoding:") !== false) {
-                $connection->close();
-                return 0;
+                // 解析 chunked
+                $len = static::calculateChunkLength($t_buffer = substr($buffer, $crlf_pos));
+                // echo "当前chunk长度：{$len}\n";
+                if ($len === -1 || $len === -2) {
+                    $connection->close();
+                    return 0;
+                }
+                if ($len === -3) {
+                    return 0;
+                }
+                $has_content_length = true;
+                $length = strlen($t_buffer) + $length - 4;
             }
         }
         if ($has_content_length) {
@@ -559,12 +625,12 @@ class HttpProtocol implements TcpProtocolInterface
             $response = self::$response_cache[$package];
             Server::logDebug('Using response cache: ' . strlen($package));
             // 执行 HTTP Request 回调
-            $base->emitEventCallback('response', $connection, $response);
+            $base->emitEventCallback('response', $response, $connection);
             return true;
         }
         // 没缓存，再解析
         $response = static::parseRawResponse($package);
-        $base->emitEventCallback('response', $connection, $response);
+        $base->emitEventCallback('response', $response, $connection);
         // 缓存一下
         if ($cache) {
             Server::logDebug('Caching response cache: ' . strlen($package));

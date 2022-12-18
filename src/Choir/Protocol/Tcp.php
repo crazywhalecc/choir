@@ -12,6 +12,7 @@ use Choir\Protocol\Context\DefaultContext;
 use Choir\Protocol\Context\WebSocketContext;
 use Choir\Server;
 use Choir\SocketBase;
+use Choir\TcpClient;
 use Psr\Http\Message\StreamInterface;
 
 /**
@@ -89,9 +90,11 @@ class Tcp implements ConnectionInterface
             stream_set_read_buffer($this->socket, 0);
         }
 
-        // 加入全球化的 EventLoop 异步读取
-        Server::logDebug('添加异步读取 on ' . get_class($base));
-        EventHandler::$event->onReadable($this->socket, [$this, 'onReadConnection']);
+        if (!$base instanceof TcpClient) {
+            // 加入全球化的 EventLoop 异步读取
+            Server::logDebug('添加异步读取 on ' . get_class($base));
+            EventHandler::$event->onReadable($this->socket, [$this, 'onReadConnection']);
+        }
 
         // 设置缓存区和包大小，默认 1MB 和 10MB
         $this->max_send_buffer_size = intval($this->base->settings['max-send-buffer-size'] ?? 1048576);
@@ -115,6 +118,9 @@ class Tcp implements ConnectionInterface
      */
     public function onReadConnection($socket, bool $check_eof = true): void
     {
+        if ($this->isClientMode()) {
+            Server::logDebug('Reading from client...');
+        }
         // SSL 握手
         if ($this->base->protocol->getTransport() === 'ssl' && $this->ssl_handshake_completed !== true) {
             if ($this->handshakeSsl($socket, $this->client_mode)) {
@@ -217,11 +223,12 @@ class Tcp implements ConnectionInterface
             $len = @\fwrite($socket, $this->send_buffer);
         }
         restore_error_handler();
-
+        // echo "================\n";
         if ($len === strlen($this->send_buffer)) {
             $this->bytes_written += $len;
             EventHandler::$event->offWritable($socket);
             $this->send_buffer = '';
+
             // Try to emit onBufferDrain callback when the send buffer becomes empty.
             Server::getInstance()->emitEventCallback('bufferdrain', $this);
             if ($this->status === CHOIR_TCP_CLOSING) {
@@ -441,6 +448,7 @@ class Tcp implements ConnectionInterface
     public function destroyConnection(): void
     {
         Server::logDebug('destroying connection #' . $this->id);
+        // debug_print_backtrace();
         // 已关闭就不管了
         if ($this->status === CHOIR_TCP_CLOSED) {
             return;

@@ -5,8 +5,8 @@ declare(strict_types=1);
 // 全局常量部分
 
 // Choir 版本 ID（x.y.z：x0y0z）
-const CHOIR_VERSION_ID = 100;
-const CHOIR_VERSION = '0.1.0-alpha';
+const CHOIR_VERSION_ID = 101;
+const CHOIR_VERSION = '0.1.1-alpha';
 
 // Choir 进程状态码
 const CHOIR_PROC_NONE = 0;

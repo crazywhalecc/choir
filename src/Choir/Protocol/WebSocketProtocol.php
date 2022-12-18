@@ -9,6 +9,7 @@ use Choir\Exception\ValidatorException;
 use Choir\Http\HttpFactory;
 use Choir\Protocol\Context\WebSocketContext;
 use Choir\Server;
+use Choir\SocketBase;
 use Choir\WebSocket\Frame;
 use Choir\WebSocket\FrameFactory;
 use Choir\WebSocket\Opcode;
@@ -201,10 +202,6 @@ class WebSocketProtocol extends HttpProtocol
      */
     public function execute($server, string $package, ConnectionInterface $connection): bool
     {
-        // 本地静态变量做缓存
-        /** @var RequestInterface[] $requests */
-        static $requests = [];
-
         /** @var Frame[] $frames Frame 缓存 */
         static $frames = [];
 
@@ -217,78 +214,10 @@ class WebSocketProtocol extends HttpProtocol
 
         // 还没握手，先当 HTTP 解析，如果解析出来请求是握手请求，再说别的
         if (!$connection->context->ws_handshake) {
-            // 先检查缓存
-            if ($cache && isset($requests[$package])) {
-                $request = $requests[$package];
-
-                // 执行 HTTP Request 回调
-                $server->emitEventCallback('request', $connection, $request);
-                return true;
-            }
-
-            // 不是缓存，现在生成或辨别
-            $request = static::parseRawRequest($package);
-            // HTTP Header 部分 + 换行符的长度
-            $header_length = strpos($package, "\r\n\r\n") + 4;
-
-            // 如果是 WebSocket 握手请求，那么就执行握手
-            if (
-                $request->getMethod() === 'GET'
-                && $request->getHeaderLine('Upgrade') !== ''
-                && $request->getHeaderLine('Connection') !== ''
-                && $request->getHeaderLine('Sec-WebSocket-Key') !== ''
-                && $request->getHeaderLine('Sec-WebSocket-Version') !== ''
-            ) {
-                // Calculation websocket key.
-                $new_key = \base64_encode(\sha1($request->getHeaderLine('Sec-WebSocket-Key') . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
-
-                // 制作一个特殊的 WS 握手回包
-                $response = HttpFactory::createResponse(101, 'Switching Protocols', [
-                    'Upgrade' => 'websocket',
-                    'Sec-WebSocket-Version' => '13',
-                    'Connection' => 'Upgrade',
-                    'Sec-WebSocket-Accept' => $new_key,
-                ]);
-
-                // 初始化上下文依赖的东西
-                $connection->context->current_frame_length = 0;
-                $connection->context->current_frame_buffer = '';
-                $connection->context->opcode = Opcode::TEXT;
-
-                // 执行 onOpen 回调
-                $server->emitEventCallback('open', $connection, $request);
-
-                // 发送握手成功回包，并上下文标记握手成功
-                /* @phpstan-ignore-next-line */
-                $connection->send((string) $response);
-                $connection->context->ws_handshake = true;
-
-                // 发送没发送的临时数据,TODO
-                if (!empty($connection->context->tmp_ws_data)) {
-                    $connection->send($connection->context->tmp_ws_data);
-                    $connection->context->tmp_ws_data = '';
-                }
-
-                // Buffer 比 Header 长，说明给粘一块了，把剩下的部分当作一次输入来解析
-                if (strlen($package) > $header_length) {
-                    // TODO: 目前的架构写这部分好像比较麻烦，因为默认 GET 包不应该有内容传入
-                    // 如果发生粘包的情况，就先丢弃吧
-                }
-                return true;
-            }
-
-            // 其他普通 HTTP 请求，继续执行 onRequest
-            $server->emitEventCallback('request', $connection, $request);
-            // 缓存一下
-            if ($cache) {
-                $requests[$package] = $request;
-                if (count($requests) > 512) {
-                    unset($requests[key($requests)]);
-                }
-            }
-            return true;
+            return $this->dealWSHandshake($server, $package, $connection);
         }
 
+        // 下面握手成功，开始处理数据
         if ($cache && isset($frames[$package])) {
             $frame = $frames[$package];
         } else {
@@ -303,12 +232,6 @@ class WebSocketProtocol extends HttpProtocol
                 $data_len,
                 $mask_key
             );
-            Server::logDebug('Current execute frame opcode: ');
-            var_dump($opcode);
-            Server::logDebug('Current execute frame FIN and MASKED: ');
-            var_dump($fin, $masked);
-            var_dump($connection->context->current_frame_length);
-
             if (!$parsed) {
                 Server::logDebug('Parse frame head failed, close the connection');
                 $connection->close();
@@ -407,5 +330,93 @@ class WebSocketProtocol extends HttpProtocol
     public function getConnectionClass(): string
     {
         return WsConnection::class;
+    }
+
+    /**
+     * @param  SocketBase         $base       Socket 基类
+     * @param  string             $package    客户端发来的数据
+     * @param  Tcp                $connection 当前连接
+     * @throws ProtocolException
+     * @throws ValidatorException
+     * @throws \Throwable
+     * @return bool               是否握手成功
+     */
+    public function dealWSHandshake(SocketBase $base, string $package, Tcp $connection): bool
+    {
+        // 本地静态变量做缓存
+        /** @var RequestInterface[] $requests */
+        static $requests = [];
+
+        // 先检查缓存
+        $cache = static::$enable_cache && !isset($package[512]);
+        if ($cache && isset($requests[$package])) {
+            $request = $requests[$package];
+
+            // 执行 HTTP Request 回调
+            $base->emitEventCallback('request', $connection, $request);
+            return true;
+        }
+
+        // 不是缓存，现在生成或辨别
+        $request = static::parseRawRequest($package);
+        // HTTP Header 部分 + 换行符的长度
+        $header_length = strpos($package, "\r\n\r\n") + 4;
+
+        // 如果是 WebSocket 握手请求，那么就执行握手
+        if (
+            $request->getMethod() === 'GET'
+            && $request->getHeaderLine('Upgrade') !== ''
+            && $request->getHeaderLine('Connection') !== ''
+            && $request->getHeaderLine('Sec-WebSocket-Key') !== ''
+            && $request->getHeaderLine('Sec-WebSocket-Version') !== ''
+        ) {
+            // Calculation websocket key.
+            $new_key = \base64_encode(\sha1($request->getHeaderLine('Sec-WebSocket-Key') . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
+
+            // 制作一个特殊的 WS 握手回包
+            $response = HttpFactory::createResponse(101, 'Switching Protocols', [
+                'Upgrade' => 'websocket',
+                'Sec-WebSocket-Version' => '13',
+                'Connection' => 'Upgrade',
+                'Sec-WebSocket-Accept' => $new_key,
+            ]);
+
+            // 初始化上下文依赖的东西
+            $connection->context->current_frame_length = 0;
+            $connection->context->current_frame_buffer = '';
+            $connection->context->opcode = Opcode::TEXT;
+
+            // 执行 onOpen 回调
+            $base->emitEventCallback('open', $connection, $request);
+
+            // 发送握手成功回包，并上下文标记握手成功
+            /* @phpstan-ignore-next-line */
+            $connection->send((string) $response);
+            $connection->context->ws_handshake = true;
+
+            // 发送没发送的临时数据,TODO
+            if (!empty($connection->context->tmp_ws_data)) {
+                $connection->send($connection->context->tmp_ws_data);
+                $connection->context->tmp_ws_data = '';
+            }
+
+            // Buffer 比 Header 长，说明给粘一块了，把剩下的部分当作一次输入来解析
+            if (strlen($package) > $header_length) {
+                // TODO: 目前的架构写这部分好像比较麻烦，因为默认 GET 包不应该有内容传入
+                // 如果发生粘包的情况，就先丢弃吧
+            }
+            return true;
+        }
+
+        // 其他普通 HTTP 请求，继续执行 onRequest
+        $base->emitEventCallback('request', $connection, $request);
+        // 缓存一下
+        if ($cache) {
+            $requests[$package] = $request;
+            if (count($requests) > 512) {
+                unset($requests[key($requests)]);
+            }
+        }
+        return true;
     }
 }

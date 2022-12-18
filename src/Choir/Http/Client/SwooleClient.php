@@ -22,12 +22,16 @@ use Swoole\WebSocket\Frame;
  */
 class SwooleClient implements TimeoutInterface, ClientInterface, AsyncClientInterface, UpgradableClientInterface
 {
+    /** @var null|Client Swoole Coroutine Client 对象 */
     protected ?Client $client = null;
 
+    /** @var int TCP/WebSocket 连接状态标记 */
     protected int $status = CHOIR_TCP_INITIAL;
 
+    /** @var null|callable|\Closure onMessage 回调 */
     protected $on_message;
 
+    /** @var null|callable onClose 回调 */
     protected $on_close;
 
     private array $set = [];
@@ -65,7 +69,7 @@ class SwooleClient implements TimeoutInterface, ClientInterface, AsyncClientInte
         return HttpFactory::createResponse($client->statusCode, null, $client->getHeaders(), $client->getBody());
     }
 
-    public function sendRequestAsync(RequestInterface $request, callable $success_callback, callable $error_callback)
+    public function sendRequestAsync(RequestInterface $request, callable $success_callback, callable $error_callback): bool
     {
         go(function () use ($request, $success_callback, $error_callback) {
             $this->client = $client = $this->buildBaseClient($request);
@@ -76,8 +80,14 @@ class SwooleClient implements TimeoutInterface, ClientInterface, AsyncClientInte
                 call_user_func($success_callback, $response);
             }
         });
+        return true;
     }
 
+    /**
+     * 通过 PSR-7 的 Request 对象创建一个 Swoole Client
+     *
+     * @param RequestInterface $request PSR-7 Request 对象
+     */
     public function buildBaseClient(RequestInterface $request): Client
     {
         $uri = $request->getUri();
@@ -139,6 +149,12 @@ class SwooleClient implements TimeoutInterface, ClientInterface, AsyncClientInte
 
     public function upgrade(UriInterface $uri, array $headers = [], bool $reconnect = false): bool
     {
+        if ($this->on_message === null) {
+            $this->on_message = function () {};
+        }
+        if ($this->on_close === null) {
+            $this->on_close = function () {};
+        }
         if (!$reconnect && $this->status !== CHOIR_TCP_INITIAL) {
             return false;
         }
@@ -174,29 +190,30 @@ class SwooleClient implements TimeoutInterface, ClientInterface, AsyncClientInte
         if ($this->client->errCode !== 0) {
             return false;
         }
-        if ($code) {
-            go(function () {
-                while (true) {
-                    $result = $this->client->recv(60);
-                    if ($result === false) {
-                        if ($this->client->connected === false) {
-                            $this->status = CHOIR_TCP_CLOSED;
-                            go(function () {
-                                $frame = FrameFactory::createCloseFrame($this->client->statusCode, '');
-                                call_user_func($this->on_close, $frame, $this);
-                            });
-                            break;
-                        }
-                    } elseif ($result instanceof Frame) {
-                        go(function () use ($result) {
-                            $frame = new \Choir\WebSocket\Frame($result->data, $result->opcode, true, true);
-                            call_user_func($this->on_message, $frame, $this);
-                        });
-                    }
-                }
-            });
+        if (!$code) {
+            $this->status = CHOIR_TCP_CLOSED;
+            return $code;
         }
-        $this->status = $code ? CHOIR_TCP_ESTABLISHED : CHOIR_TCP_CLOSED;
+        go(function () {
+            while (true) {
+                $result = $this->client->recv(60);
+                if ($result === false && !$this->client->connected) {
+                    $this->status = CHOIR_TCP_CLOSED;
+                    go(function () {
+                        $frame = FrameFactory::createCloseFrame($this->client->statusCode, '');
+                        call_user_func($this->on_close, $frame, $this);
+                    });
+                    break;
+                }
+                if ($result instanceof Frame) {
+                    go(function () use ($result) {
+                        $frame = new \Choir\WebSocket\Frame($result->data, $result->opcode, true, true);
+                        call_user_func($this->on_message, $frame, $this);
+                    });
+                }
+            }
+        });
+        $this->status = CHOIR_TCP_ESTABLISHED;
         return $code;
     }
 }

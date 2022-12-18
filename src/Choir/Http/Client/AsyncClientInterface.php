@@ -15,5 +15,5 @@ interface AsyncClientInterface
      * @param callable         $success_callback 成功请求的回调
      * @param callable         $error_callback   失败请求的回调
      */
-    public function sendRequestAsync(RequestInterface $request, callable $success_callback, callable $error_callback);
+    public function sendRequestAsync(RequestInterface $request, callable $success_callback, callable $error_callback): bool;
 }

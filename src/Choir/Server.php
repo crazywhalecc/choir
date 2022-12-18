@@ -393,17 +393,24 @@ EOF;
         foreach ($this->listen_ports as $port) {
             $port->stopListen();
         }
-
+        Server::logDebug('stopped all listens for worker');
         // 销毁事件循环
         if (EventHandler::$event !== null) {
+            Server::logDebug('stopped event-loop, then will exit with ' . $code);
             EventHandler::$event->stop();
         }
         // 退出当前 Worker 进程
         try {
-            exit($code);
+            if (EventHandler::$event instanceof Swoole) {
+                /* @noinspection PhpComposerExtensionStubsInspection */
+                posix_kill(getmypid(), SIGTERM);
+            } else {
+                exit($code);
+            }
             /* @phpstan-ignore-next-line */
         } catch (\Throwable $e) {
             static::$exit_code = $code;
+            Server::logError(choir_exception_as_string($e));
         }
     }
 

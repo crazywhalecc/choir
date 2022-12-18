@@ -93,7 +93,7 @@ class StreamClient implements TimeoutInterface, ClientInterface, AsyncClientInte
      * @throws NetworkException
      * @throws RuntimeException
      */
-    public function sendRequestAsync(RequestInterface $request, callable $success_callback, callable $error_callback)
+    public function sendRequestAsync(RequestInterface $request, callable $success_callback, callable $error_callback): bool
     {
         $remote = $this->config['remote_socket'];
         $useSsl = $this->config['ssl'];
@@ -134,10 +134,10 @@ class StreamClient implements TimeoutInterface, ClientInterface, AsyncClientInte
                     $success_callback($response);
                 });
             });
-        } else {
+            return true;
+        }
             // 没部署好 EventLoop 就想要异步？
             throw new RuntimeException('Event Loop not initialized while using stream async client');
-        }
     }
 
     /**
@@ -301,39 +301,6 @@ class StreamClient implements TimeoutInterface, ClientInterface, AsyncClientInte
     }
 
     /**
-     * Return remote socket from the request.
-     *
-     * @throws RequestException
-     */
-    private function determineRemoteFromRequest(RequestInterface $request): string
-    {
-        if (!$request->hasHeader('Host') && $request->getUri()->getHost() === '') {
-            throw new RequestException($request, 'Remote is not defined and we cannot determine a connection endpoint for this request (no Host header)');
-        }
-
-        $endpoint = '';
-
-        $host = $request->getUri()->getHost();
-        if (!empty($host)) {
-            $endpoint .= $host;
-            if ($request->getUri()->getPort() !== null) {
-                $endpoint .= ':' . $request->getUri()->getPort();
-            } elseif ($request->getUri()->getScheme() === 'https') {
-                $endpoint .= ':443';
-            } else {
-                $endpoint .= ':80';
-            }
-        }
-
-        // If use the host header if present for the endpoint
-        if (empty($host) && $request->hasHeader('Host')) {
-            $endpoint = $request->getHeaderLine('Host');
-        }
-
-        return sprintf('tcp://%s', $endpoint);
-    }
-
-    /**
      * Replace fwrite behavior as api is broken in PHP.
      *
      * @see https://secure.phabricator.com/rPHU69490c53c9c2ef2002bc2dd4cecfe9a4b080b497
@@ -381,5 +348,38 @@ class StreamClient implements TimeoutInterface, ClientInterface, AsyncClientInte
         // then immediately performed another 0-length write. Conclude that the pipe
         // is broken and return `false`.
         return false;
+    }
+
+    /**
+     * Return remote socket from the request.
+     *
+     * @throws RequestException
+     */
+    private function determineRemoteFromRequest(RequestInterface $request): string
+    {
+        if (!$request->hasHeader('Host') && $request->getUri()->getHost() === '') {
+            throw new RequestException($request, 'Remote is not defined and we cannot determine a connection endpoint for this request (no Host header)');
+        }
+
+        $endpoint = '';
+
+        $host = $request->getUri()->getHost();
+        if (!empty($host)) {
+            $endpoint .= $host;
+            if ($request->getUri()->getPort() !== null) {
+                $endpoint .= ':' . $request->getUri()->getPort();
+            } elseif ($request->getUri()->getScheme() === 'https') {
+                $endpoint .= ':443';
+            } else {
+                $endpoint .= ':80';
+            }
+        }
+
+        // If use the host header if present for the endpoint
+        if (empty($host) && $request->hasHeader('Host')) {
+            $endpoint = $request->getHeaderLine('Host');
+        }
+
+        return sprintf('tcp://%s', $endpoint);
     }
 }
